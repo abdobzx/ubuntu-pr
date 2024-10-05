@@ -1,68 +1,155 @@
-import React, { useState } from 'react';
-import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
+const fs = require('fs');
+const https = require('https');
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+const cors = require('cors');
+const privatekey = fs.readFileSync('/etc/letsencrypt/live/ebook.sytes.net/privkey.pem', 'utf8');
+const certificate = fs.readFileSync('/etc/letsencrypt/live/ebook.sytes.net/fullchain.pem', 'utf8');
+const credentials = { key: privatekey, cert: certificate };
+const paypal = require('@paypal/checkout-server-sdk');
+app.use(cors());
+app.use(express.json());
 
-function Message({ content }) {
-  return <p>{content}</p>;
+const clientId = 'AdSQOcXbI0U4Dt5DJHZdL3lKI7gHJeOB-pRfsRpsAFvCh5khIDnhr2FJisJXmPs4y1752N5Tzpro5FTS';
+const clientSecret = 'EMeya4EBacOqmXmiQ5F7aPjgcu2UhIfRrKGEOV0E5AhPJdj87gN0Y6chONEh2Bniwfg08biikfq_S-IJ';
+const paypalClient = new paypal.core.PayPalHttpClient(new paypal.core.SandboxEnvironment(clientId, clientSecret));
+
+async function checkPayPalCredentials() {
+    try {
+        const request = new paypal.orders.OrdersCreateRequest();
+        request.requestBody({
+            intent: "CAPTURE",
+            purchase_units: [{
+                amount: {
+                    currency_code: "USD",
+                    value: "1.00"
+                }
+            }]
+        });
+        const response = await paypalClient.execute(request);
+        console.log("PayPal credentials are valid.");
+    } catch (error) {
+        console.error("PayPal credentials are invalid or could not be verified:", error.message);
+    }
 }
 
-const Payo = () => {
-  const initialOptions = {
-    'client-id': 'AdSQOcXbI0U4Dt5DJHZdL3lKI7gHJeOB-pRfsRpsAFvCh5khIDnhr2FJisJXmPs4y1752N5Tzpro5FTS',
-    'enable-funding': 'paylater,venmo,card',
-    'data-sdk-integration-source': 'integrationbuilder_sc',
-  };
+checkPayPalCredentials();
 
-  const [message, setMessage] = useState('');
+app.get('/', (req, res) => {
+    res.send('404');
+});
 
-  const createOrder = async () => {
-    try {
-      const response = await fetch('https://ebook.sytes.net:3000/api/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          cart: [
-            {
-              id: 'YOUR_PRODUCT_ID',
-              quantity: 'YOUR_PRODUCT_QUANTITY',
-            },
-          ],
-        }),
-      });
-
-      if (!response.ok) throw new Error('Network response was not ok');
-
-      const orderData = await response.json();
-
-      if (orderData.id) {
-        return orderData.id;
-      } else {
-        throw new Error('Order ID not found in the response');
-      }
-    } catch (error) {
-      console.error(error);
-      setMessage(`Could not initiate PayPal Checkout...${error}`);
+// MongoDB
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const uri = "mongodb+srv://ebook-store:wsZM7snqt2ma5kQg@travel-app.igqp7kb.mongodb.net/?retryWrites=true&w=majority&appName=Travel-app";
+const client = new MongoClient(uri, {
+    serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
     }
-  };
+});
 
-  return (
-    <div className="App">
-      <PayPalScriptProvider options={initialOptions}>
-        <PayPalButtons
-          style={{
-            shape: 'rect',
-            layout: 'vertical',
-          }}
-          createOrder={createOrder}
-          onApprove={(data, actions) => {
-            // Handle approval logic here
-          }}
-        />
-      </PayPalScriptProvider>
-      <Message content={message} />
-    </div>
-  );
-};
+async function run() {
+    try {
+        await client.connect();
+        const bookCollections = client.db("BookInventory").collection("books");
 
-export default Payo;
+        app.post("/api/orders", async (req, res) => {
+            const orderRequest = new paypal.orders.OrdersCreateRequest();
+            orderRequest.prefer("return=representation");
+            orderRequest.requestBody({
+                intent: "CAPTURE",
+                purchase_units: [
+                    {
+                        amount: {
+                            currency_code: "USD",
+                            value: "100.00",
+                            breakdown: {
+                                item_total: {
+                                    currency_code: "USD",
+                                    value: "10.00"
+                                }
+                            }
+                        },
+                        items: [
+                            {
+                                name: "YourProductName",
+                                unit_amount: {
+                                    currency_code: "USD",
+                                    value: "10.00"
+                                },
+                                quantity: 1
+                            }
+                        ]
+                    }
+                ]
+            });
+            try {
+                const order = await paypalClient.execute(orderRequest);
+                res.status(201).json({ id: order.result.id });
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ error: "Failed to create PayPal order" });
+            }
+        });
+
+        // Insert ebook
+        app.post("/upload-book", async (req, res) => {
+            const data = req.body;
+            const result = await bookCollections.insertOne(data);
+            res.send(result);
+        });
+
+        // Patch book
+        app.patch("/book/:id", async (req, res) => {
+            const id = req.params.id;
+            const updateBookData = req.body;
+            const filter = { _id: new ObjectId(id) };
+            const updateDoc = {
+                $set: {
+                    ...updateBookData
+                },
+            };
+            const options = { upsert: true };
+            const result = await bookCollections.updateOne(filter, updateDoc, options);
+            res.send(result);
+        });
+
+        // Delete book
+        app.delete("/book/:id", async (req, res) => {
+            const id = req.params.id;
+            const filter = { _id: new ObjectId(id) };
+            const result = await bookCollections.deleteOne(filter);
+            res.send(result);
+        });
+
+        // Get single book
+        app.get("/book/:id", async (req, res) => {
+            const id = req.params.id;
+            const filter = { _id: new ObjectId(id) };
+            const result = await bookCollections.findOne(filter);
+            res.send(result);
+        });
+
+        // Find books
+        app.get("/all-books", async (req, res) => {
+            let query = {};
+            if (req.query?.category) {
+                query = { category: req.query.category };
+            }
+            const result = await bookCollections.find(query).toArray();
+            res.send(result);
+        });
+
+        await client.db("admin").command({ ping: 1 });
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    } finally {
+        // await client.close();
+    }
+}
+
+run().catch(console.dir);
+
+https.createServer (credentials,app).listen(port, () => {console.log (https good ${port} )})
