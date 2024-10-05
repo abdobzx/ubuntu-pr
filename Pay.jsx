@@ -16,7 +16,7 @@ const Payo = () => {
 
   const createOrder = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/orders', { // Make sure the port is correct
+      const response = await fetch('https://ebook.sytes.net:3000/api/orders', { // Make sure the port is correct
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
