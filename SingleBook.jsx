@@ -61,7 +61,7 @@ const SingleBook = () => {
           <span className='font-semibold'>Author:</span> {authorName}
         </div>
         
-        <PayPalScriptProvider options={{ "client-id": "ATj9MxnQ4Pv_TpSHCBLtwFdLZOGsBUiuWAsOPY44eKZHFXmsXgaBhRB2hkA4WvAe5sRC9pZC78r1qqY5" }}>
+        <PayPalScriptProvider options={{ "client-id": "AdSQOcXbI0U4Dt5DJHZdL3lKI7gHJeOB-pRfsRpsAFvCh5khIDnhr2FJisJXmPs4y1752N5Tzpro5FTS" }}>
           <PayPalButtons 
             style={{ layout: "vertical" }}
             createOrder={createOrder} // Hook to your backend order creation
