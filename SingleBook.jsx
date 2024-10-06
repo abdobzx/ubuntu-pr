@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useLoaderData } from 'react-router-dom';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
@@ -18,6 +17,25 @@ const SingleBook = () => {
     // Show the download link
     setShowDownloadLink(true);
     console.log(details, data); // Log payment details for debugging/verification
+  };
+
+  // Function to handle order creation for PayPal
+  const createOrder = async (data, actions) => {
+    return fetch('https://ebook.sytes.net:3000/api/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error('Failed to create PayPal order');
+        }
+        return res.json();
+      })
+      .then((orderData) => {
+        return orderData.id;
+      });
   };
 
   return (
@@ -46,19 +64,15 @@ const SingleBook = () => {
         <PayPalScriptProvider options={{ "client-id": "ATj9MxnQ4Pv_TpSHCBLtwFdLZOGsBUiuWAsOPY44eKZHFXmsXgaBhRB2hkA4WvAe5sRC9pZC78r1qqY5" }}>
           <PayPalButtons 
             style={{ layout: "vertical" }}
-            createOrder={(data, actions) => {
-              return actions.order.create({
-                purchase_units: [{
-                  amount: {
-                    value: "10", // Charge $10
-                  },
-                }],
-              });
-            }}
+            createOrder={createOrder} // Hook to your backend order creation
             onApprove={(data, actions) => {
               return actions.order.capture().then(details => {
                 handlePaymentSuccess(details, data);
               });
+            }}
+            onError={(err) => {
+              console.error('Error during PayPal Checkout:', err);
+              alert('An error occurred during the transaction.');
             }}
           />
         </PayPalScriptProvider>
